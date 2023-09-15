@@ -266,7 +266,7 @@ class CellposeModel(UnetModel):
                     model_type=None, net_avg=False,
                     diam_mean=30., device=None,
                     residual_on=True, style_on=True, concatenation=False,
-                    nchan=2):
+                    nchan=2, noutputs=1):
         self.torch = True
         if isinstance(pretrained_model, np.ndarray):
             pretrained_model = list(pretrained_model)
@@ -309,13 +309,12 @@ class CellposeModel(UnetModel):
                     _, residual_on, style_on, concatenation = params 
                 models_logger.info(f'>>>> loading model {pretrained_model_string}')
             
-
-                
+        nclasses = noutputs * 3
         # initialize network
         super().__init__(gpu=gpu, pretrained_model=False,
                          diam_mean=self.diam_mean, net_avg=net_avg, device=device,
                          residual_on=residual_on, style_on=style_on, concatenation=concatenation,
-                        nchan=nchan)
+                         nchan=nchan, nclasses=nclasses)
 
         self.unet = False
         self.pretrained_model = pretrained_model
@@ -512,7 +511,6 @@ class CellposeModel(UnetModel):
                 diameter = self.diam_labels
                 rescale = self.diam_mean / diameter
 
-
             masks, styles, dP, cellprob, p = self._run_cp(x, 
                                                           compute_masks=compute_masks,
                                                           normalize=normalize,
@@ -555,10 +553,9 @@ class CellposeModel(UnetModel):
 
         tic = time.time()
         shape = x.shape
-        nimg = shape[0]        
+        nimg = shape[0]   
+        noutputs = self.nclasses // 3     
         
-        bd, tr = None, None
-
         # pre-normalize if 3D stack for stitching or do_3D
         do_normalization = True if normalize_params['normalize'] else False
         if nimg > 1 and do_normalization and (stitch_threshold or do_3D):
@@ -587,8 +584,8 @@ class CellposeModel(UnetModel):
             #    cellprob = np.zeros((nimg, shape[1], shape[2]), np.float32)
                 
             #else:
-            dP = np.zeros((2, nimg, int(shape[1]*rescale), int(shape[2]*rescale)), np.float32)
-            cellprob = np.zeros((nimg, int(shape[1]*rescale), int(shape[2]*rescale)), np.float32)
+            dP = np.zeros((noutputs, 2, nimg, int(shape[1]*rescale), int(shape[2]*rescale)), np.float32)
+            cellprob = np.zeros((noutputs, nimg, int(shape[1]*rescale), int(shape[2]*rescale)), np.float32)
                 
             for i in iterator:
                 img = np.asarray(x[i])
@@ -602,17 +599,12 @@ class CellposeModel(UnetModel):
                 ## moving resizing later to reduce memory usage
                 #if resample:
                 #    yf = transforms.resize_image(yf, shape[1], shape[2])
-
-                cellprob[i] = yf[:,:,2]
-                dP[:, i] = yf[:,:,:2].transpose((2,0,1)) 
-                if self.nclasses == 4:
-                    if i==0:
-                        bd = np.zeros_like(cellprob)
-                    bd[i] = yf[:,:,3]
+                for k in range(noutputs):
+                    cellprob[k, i] = yf[:, :, 3*k+2]
+                    dP[k, :, i] = yf[:, :, 3*k : 3*k+2].transpose((2,0,1)) 
                 styles[i][:len(style)] = style
             del yf, style
         styles = styles.squeeze()
-        
         
         net_time = time.time() - tic
         if nimg > 1:
@@ -634,23 +626,30 @@ class CellposeModel(UnetModel):
                 resize = [shape[1], shape[2]] if (not resample and rescale!=1) else None
                 iterator = trange(nimg, file=tqdm_out) if nimg>1 else range(nimg)
                 for i in iterator:
-                    dPi = dP[:,i] 
-                    cellprobi = cellprob[i]
-                    if resample and rescale!=1:
-                        dPi = transforms.resize_image(dPi, shape[1], shape[2], no_channels=True)
-                        cellprobi = transforms.resize_image(cellprobi, shape[1], shape[2], no_channels=True)    
+                    for k in range(noutputs):
+                        dPi = dP[k, :, i].copy()
+                        cellprobi = cellprob[k, i].copy()
+                        if resample and rescale!=1:
+                            dPi = transforms.resize_image(dPi, shape[1], shape[2], no_channels=True)
+                            cellprobi = transforms.resize_image(cellprobi, shape[1], shape[2], no_channels=True)    
 
-                    outputs = dynamics.compute_masks(dPi, cellprobi, niter=niter, cellprob_threshold=cellprob_threshold,
+                        outputs = dynamics.compute_masks(dPi, cellprobi, niter=niter, cellprob_threshold=cellprob_threshold,
                                                          flow_threshold=flow_threshold, interp=interp, resize=resize,
-                                                         min_size=min_size if nimg==1 else -1, use_gpu=self.gpu, device=self.device)
-                    masks.append(outputs[0])
-                    if nimg == 1:
-                        p.append(outputs[1])
-                        dP = dPi 
-                        cellprob = cellprobi
-                    
+                                                         min_size=min_size if nimg==1 else -1, 
+                                                         use_gpu=self.gpu, device=self.device)
+                        masks.append(outputs[0])
+                        if nimg == 1:
+                            p.append(outputs[1])
+                            if noutputs==1:
+                                dP = dPi 
+                                cellprob = cellprobi
+                            
                 masks = np.array(masks)
                 p = np.array(p)
+                if noutputs > 1:
+                    masks = masks.reshape((nimg, noutputs, *masks.shape[-2:]))
+                    p = p.reshape((nimg, noutputs, *p.shape[-3:]))
+                
                 
                 if stitch_threshold > 0 and nimg > 1:
                     models_logger.info(f'stitching {nimg} planes using stitch_threshold={stitch_threshold:0.3f} to make 3D masks')
