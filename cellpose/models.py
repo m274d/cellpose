@@ -540,6 +540,13 @@ class CellposeModel():
                     flow_threshold=flow_threshold, interp=interp, do_3D=do_3D,
                     min_size=min_size, resize=None,
                     device=self.device if self.gpu else None)
+                if anisotropy is not None:
+                    Lz, Ly, Lx = masks.shape 
+                    Lzr = img.shape[0]
+                    import cv2
+                    masks = transforms.resize_image(masks.transpose(1,0,2), Ly=Lzr, Lx=Lx, no_channels=True, 
+                                                    interpolation=cv2.INTER_NEAREST).transpose(1,0,2).astype("uint16")
+                    #dP = transforms.resize_image(dP.transpose(1,0,2,3), Ly=Lzr, Lx=Lxr).transpose(1,0,2,3)
             else:
                 masks, p = [], []
                 resize = [shape[1], shape[2]] if (not resample and

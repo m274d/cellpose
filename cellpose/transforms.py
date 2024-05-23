@@ -727,7 +727,7 @@ def resize_image(img0, Ly=None, Lx=None, rsz=None, interpolation=cv2.INTER_LINEA
     return imgs
 
 
-def pad_image_ND(img0, div=16, extra=1, min_size=None):
+def pad_image_ND(img0, div=16, extra=1, min_size=None, zpad=False):
     """Pad image for test-time so that its dimensions are a multiple of 16 (2D or 3D).
 
     Args:
@@ -735,6 +735,7 @@ def pad_image_ND(img0, div=16, extra=1, min_size=None):
         div (int, optional): Divisor for padding. Defaults to 16.
         extra (int, optional): Extra padding. Defaults to 1.
         min_size (tuple, optional): Minimum size of the image. Defaults to None.
+        zpad (bool, optional): pad in Z direction
 
     Returns:   
         tuple containing 
@@ -755,8 +756,15 @@ def pad_image_ND(img0, div=16, extra=1, min_size=None):
     ypad1 = extra * div // 2 + Lpad // 2
     ypad2 = extra * div // 2 + Lpad - Lpad // 2
 
+    if zpad:
+        Lpad = int(div * np.ceil(img0.shape[-3] / div) - img0.shape[-3])
+        zpad1 = extra * div // 2 + Lpad // 2
+        zpad2 = extra * div // 2 + Lpad - Lpad // 2
+    else:
+        zpad1, zpad2 = 0, 0
+
     if img0.ndim > 3:
-        pads = np.array([[0, 0], [0, 0], [xpad1, xpad2], [ypad1, ypad2]])
+        pads = np.array([[0, 0], [zpad1, zpad2], [xpad1, xpad2], [ypad1, ypad2]])
     else:
         pads = np.array([[0, 0], [xpad1, xpad2], [ypad1, ypad2]])
 
@@ -765,13 +773,16 @@ def pad_image_ND(img0, div=16, extra=1, min_size=None):
     Ly, Lx = img0.shape[-2:]
     ysub = np.arange(xpad1, xpad1 + Ly)
     xsub = np.arange(ypad1, ypad1 + Lx)
-
-    return I, ysub, xsub
+    if zpad: 
+        zsub = np.arange(zpad1, zpad1 + img0.shape[-3])
+        return I, ysub, xsub, zsub
+    else:
+        return I, ysub, xsub
 
 
 def random_rotate_and_resize(X, Y=None, scale_range=1., xy=(224, 224), do_3D=False,
                              do_flip=True, rotate=True, rescale=None, unet=False,
-                             random_per_image=True):
+                             random_per_image=True, zmax=32):
     """Augmentation by random rotation and resizing.
 
     Args:
@@ -802,7 +813,9 @@ def random_rotate_and_resize(X, Y=None, scale_range=1., xy=(224, 224), do_3D=Fal
     else:
         nchan = 1
     if do_3D and X[0].ndim > 3:
-        shape = (X[0].shape[-3], xy[0], xy[1])
+        zshapes = np.array([X[n].shape[-3] for n in range(len(X))])
+        zmax = min(zmax, zshapes.min())
+        shape = (zmax, xy[0], xy[1])
     else:
         shape = (xy[0], xy[1])
     imgi = np.zeros((nimg, nchan, *shape), np.float32)
@@ -816,11 +829,14 @@ def random_rotate_and_resize(X, Y=None, scale_range=1., xy=(224, 224), do_3D=Fal
         lbl = np.zeros((nimg, nt, *shape), np.float32)
 
     scale = np.ones(nimg, np.float32)
-
+    
     for n in range(nimg):
         Ly, Lx = X[n].shape[-2:]
 
         if random_per_image or n == 0:
+            if do_3D:
+                zrange = np.random.randint(zshapes[n]-zmax) + np.arange(0, zmax)
+
             # generate random augmentation parameters
             flip = np.random.rand() > .5
             theta = np.random.rand() * np.pi * 2 if rotate else 0.
@@ -859,10 +875,10 @@ def random_rotate_and_resize(X, Y=None, scale_range=1., xy=(224, 224), do_3D=Fal
 
         for k in range(nchan):
             if do_3D:
-                for z in range(shape[0]):
+                for z in zrange:
                     I = cv2.warpAffine(img[k, z], M, (xy[1], xy[0]),
                                        flags=cv2.INTER_LINEAR)
-                    imgi[n, k, z] = I
+                    imgi[n, k, z-zrange[0]] = I
             else:
                 I = cv2.warpAffine(img[k], M, (xy[1], xy[0]), flags=cv2.INTER_LINEAR)
                 imgi[n, k] = I
@@ -871,8 +887,8 @@ def random_rotate_and_resize(X, Y=None, scale_range=1., xy=(224, 224), do_3D=Fal
             for k in range(nt):
                 flag = cv2.INTER_NEAREST if k == 0 else cv2.INTER_LINEAR
                 if do_3D:
-                    for z in range(shape[0]):
-                        lbl[n, k, z] = cv2.warpAffine(labels[k, z], M, (xy[1], xy[0]),
+                    for z in zrange:
+                        lbl[n, k, z-zrange[0]] = cv2.warpAffine(labels[k, z], M, (xy[1], xy[0]),
                                                       flags=flag)
                 else:
                     lbl[n, k] = cv2.warpAffine(labels[k], M, (xy[1], xy[0]), flags=flag)

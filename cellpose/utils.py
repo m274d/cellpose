@@ -611,7 +611,7 @@ def size_distribution(masks):
     counts = np.unique(masks, return_counts=True)[1][1:]
     return np.percentile(counts, 25) / np.percentile(counts, 75)
 
-def fill_holes_and_remove_small_masks(masks, min_size=15):
+def fill_holes_and_remove_small_masks(masks, min_size=15, zextent=None):
     """ Fills holes in masks (2D/3D) and discards masks smaller than min_size.
 
     This function fills holes in each mask using scipy.ndimage.morphology.binary_fill_holes.
@@ -634,14 +634,19 @@ def fill_holes_and_remove_small_masks(masks, min_size=15):
     if masks.ndim > 3 or masks.ndim < 2:
         raise ValueError("masks_to_outlines takes 2D or 3D array, not %dD array" %
                          masks.ndim)
+    elif masks.ndim == 2:
+        zextent = None # cannot use zextent 
 
     slices = find_objects(masks)
     j = 0
     for i, slc in enumerate(slices):
         if slc is not None:
+            if masks.ndim==3 and zextent is not None:
+                zm = slc[0].stop - slc[1].start
             msk = masks[slc] == (i + 1)
             npix = msk.sum()
-            if min_size > 0 and npix < min_size:
+            if min_size > 0 and (npix < min_size or 
+                                 (zextent is not None and zm < zextent)):
                 masks[slc][msk] = 0
             elif npix > 0:
                 if msk.ndim == 3:

@@ -270,7 +270,7 @@ def _run_tiled(net, imgi, batch_size=8, augment=False, bsize=224, tile_overlap=0
         yf = np.zeros((Lz, nout, imgi.shape[-2], imgi.shape[-1]), np.float32)
         styles = []
         if ny * nx > batch_size:
-            ziterator = trange(Lz, file=tqdm_out)
+            ziterator = trange(Lz, file=tqdm_out, mininterval=30)
             for i in ziterator:
                 yfi, stylei = _run_tiled(net, imgi[i], augment=augment, bsize=bsize,
                                          tile_overlap=tile_overlap)
@@ -281,7 +281,7 @@ def _run_tiled(net, imgi, batch_size=8, augment=False, bsize=224, tile_overlap=0
             ntiles = ny * nx
             nimgs = max(2, int(np.round(batch_size / ntiles)))
             niter = int(np.ceil(Lz / nimgs))
-            ziterator = trange(niter, file=tqdm_out)
+            ziterator = trange(niter, file=tqdm_out, mininterval=30)
             for k in ziterator:
                 IMGa = np.zeros((ntiles * nimgs, nchan, ly, lx), np.float32)
                 for i in range(min(Lz - k * nimgs, nimgs)):
@@ -336,7 +336,7 @@ def _run_tiled(net, imgi, batch_size=8, augment=False, bsize=224, tile_overlap=0
 
 
 def run_3D(net, imgs, batch_size=8, rsz=1.0, anisotropy=None, augment=False, tile=True,
-           tile_overlap=0.1, bsize=224, progress=None):
+           tile_overlap=0.1, bsize=224, resample=True, progress=None):
     """ 
     Run network on image z-stack.
     
@@ -366,18 +366,27 @@ def run_3D(net, imgs, batch_size=8, rsz=1.0, anisotropy=None, augment=False, til
     pm = [(0, 1, 2, 3), (1, 0, 2, 3), (2, 0, 1, 3)]
     ipm = [(3, 0, 1, 2), (3, 1, 0, 2), (3, 1, 2, 0)]
     nout = net.nout
-    yf = np.zeros((3, nout, imgs.shape[0], imgs.shape[1], imgs.shape[2]), np.float32)
+    Lz = int(imgs.shape[0] * anisotropy) if anisotropy is not None else imgs.shape[0]
+    yf = np.zeros((3, nout, Lz, imgs.shape[1], 
+                   imgs.shape[2]), np.float32)
     for p in range(3):
         xsl = imgs.copy().transpose(pm[p])
         # rescale image for flow computation
         shape = xsl.shape
+        s1 = shape[1] if anisotropy is None or p==0 else int(shape[1] * anisotropy)
         xsl = transforms.resize_image(xsl, rsz=rescaling[p])
         # per image
         core_logger.info("running %s: %d planes of size (%d, %d)" %
-                         (sstr[p], shape[0], shape[1], shape[2]))
+                         (sstr[p], shape[0], 
+                          s1, 
+                          shape[2]))
         y, style = run_net(net, xsl, batch_size=batch_size, augment=augment, tile=tile, 
                             bsize=bsize, tile_overlap=tile_overlap)
-        y = transforms.resize_image(y, shape[1], shape[2])
+        y = transforms.resize_image(y, s1, shape[2])
+        if p==0 and anisotropy is not None:
+            y = transforms.resize_image(y.transpose(1,0,2,3), 
+                                        Ly=int(shape[0] * anisotropy),
+                                        Lx=y.shape[-2]).transpose(1,0,2,3)
         yf[p] = y.transpose(ipm[p])
         if progress is not None:
             progress.setValue(25 + 15 * p)
