@@ -256,8 +256,19 @@ def main():
             # train size model
             if args.train_size:
                 sz_model = models.SizeModel(cp_model=model, device=device)
-                masks = [lbl[0] for lbl in labels]
-                test_masks = [lbl[0] for lbl in test_labels] if test_labels is not None else test_labels
+                if labels[0].ndim>2: # flow images as labels, mask in channel 0
+                    masks = [lbl[0] for lbl in labels]
+                else: # label images as mask (2D)
+                    masks = labels
+                
+                if test_labels is not None:
+                    if test_labels[0].ndim>2: # flow images as labels, mask in channel 0
+                        test_masks = [lbl[0] for lbl in test_labels]
+                    else: # label images as mask (2D)
+                        test_masks = test_labels
+                else:
+                    test_masks = None
+
                 # data has already been normalized and reshaped
                 sz_model.train(images, masks, test_images, test_masks, 
                                 channels=None, normalize=False,
