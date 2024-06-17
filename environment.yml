@@ -18,4 +18,6 @@ dependencies:
     - fastremap
     - roifile
     - pyqt5
+    - Cython
+    - imagecodecs
   
