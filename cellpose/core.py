@@ -809,13 +809,18 @@ class UnetModel():
             self.learning_rate_const = learning_rate
             # set learning rate schedule    
             if SGD:
-                LR = np.linspace(0, self.learning_rate_const, 10)
-                if self.n_epochs > 250:
-                    LR = np.append(LR, self.learning_rate_const*np.ones(self.n_epochs-100))
+                print('fixed LR')
+                # Fixed learning rate schedule in cellpose 3.0
+                LR = np.linspace(0, learning_rate, 10)
+                LR = np.append(LR, learning_rate * np.ones(max(0, n_epochs - 10)))
+                if n_epochs > 300:
+                    LR = LR[:-100]
                     for i in range(10):
-                        LR = np.append(LR, LR[-1]/2 * np.ones(10))
-                else:
-                    LR = np.append(LR, self.learning_rate_const*np.ones(max(0,self.n_epochs-10)))
+                        LR = np.append(LR, LR[-1] / 2 * np.ones(10))
+                elif n_epochs > 100:
+                    LR = LR[:-50]
+                    for i in range(10):
+                        LR = np.append(LR, LR[-1] / 2 * np.ones(5))
             else:
                 LR = self.learning_rate_const * np.ones(self.n_epochs)
             self.learning_rate = LR
