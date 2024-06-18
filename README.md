@@ -8,7 +8,7 @@ If you are using a GPU, make sure its drivers and the cuda libraries are correct
 3. Clone this repo: `git clone https://github.com/m274d/cellpose`
 4. Navigate to repo folder: `cd cellpose`
 5. Switch to the fixed branch `git checkout 2.3_fixed`
-6. Create a new environment with `conda create --name cellpose --file=environment.yml`
+6. Create a new environment with `conda env create --name cellpose --file environment.yml`
 7. To activate this new environment, run `conda activate cellpose`
 8. To install the minimal version of cellpose, run `python install -e .`
 
