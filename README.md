@@ -6,11 +6,11 @@ If you are using a GPU, make sure its drivers and the cuda libraries are correct
 1. Install an [Anaconda](https://www.anaconda.com/products/distribution) distribution of Python. Note you might need to use an anaconda prompt if you did not add anaconda to the path.
 2. Open an anaconda prompt / command prompt which has `conda` for **python 3** in the path
 3. Clone this repo: `git clone https://github.com/m274d/cellpose`
-4. Swith to the fixed branch `git checkout 2.3_fixed`
-5. Navigate to repo folder: `cd cellpose`
-6. Create a new environment with `conda create --name cellpose --file=environment.yml`.
+4. Navigate to repo folder: `cd cellpose`
+5. Switch to the fixed branch `git checkout 2.3_fixed`
+6. Create a new environment with `conda create --name cellpose --file=environment.yml`
 7. To activate this new environment, run `conda activate cellpose`
-8. To install the minimal version of cellpose, run `python install -e .`.  
+8. To install the minimal version of cellpose, run `python install -e .`
 
 # <p>  <b>Cellpose </b> </p>
 <img src="http://www.cellpose.org/static/images/logo.png?raw=True" width="250" title="cellpose" alt="cellpose" align="right" vspace = "50">
